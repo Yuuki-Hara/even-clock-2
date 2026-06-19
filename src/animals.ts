@@ -3,94 +3,10 @@ export const ANIMAL_HEIGHT = 64;
 
 export type AnimalType = "dog" | "cat" | "sheep";
 
-// --- 犬 (Dog) ---
-const dogFrame0 = [
-  "                ",
-  "      XX        ",
-  "     XXXX       ",
-  "    XX X X      ",
-  "    XXXXXX  X   ",
-  "   XXXXXXXXXXX  ",
-  "   XXXXXXXXXXXX ",
-  "    XXXXXXXXXX  ",
-  "     XXX   XXX  ",
-  "     XX     XX  ",
-  "                ",
-];
-const dogFrame1 = [
-  "                ",
-  "      XX        ",
-  "     XXXX       ",
-  "    XX X X      ",
-  "    XXXXXX  X   ",
-  "   XXXXXXXXXXX  ",
-  "   XXXXXXXXXXXX ",
-  "    XXXXXXXXXX  ",
-  "      XX   XX   ",
-  "      XX   XX   ",
-  "                ",
-];
-
-// --- 猫 (Cat) ---
-const catFrame0 = [
-  "                ",
-  "      X   X     ",
-  "     XXXXXXX    ",
-  "    XX X X XX   ",
-  "    XXXXXXXXX   ",
-  "    XXXXXXXX    ",
-  "   XXXXXXXXXXX  ",
-  "   XXXXXXXXXX X ",
-  "     XXX   XXX  ",
-  "     XX     XX  ",
-  "                ",
-];
-const catFrame1 = [
-  "                ",
-  "      X   X     ",
-  "     XXXXXXX    ",
-  "    XX X X XX   ",
-  "    XXXXXXXXX   ",
-  "    XXXXXXXX    ",
-  "   XXXXXXXXXXX  ",
-  "   XXXXXXXXXX   ",
-  "      XX   XX X ",
-  "      XX   XX   ",
-  "                ",
-];
-
-// --- 羊 (Sheep) ---
-const sheepFrame0 = [
-  "                ",
-  "      XXXX      ",
-  "     XXXXXX     ",
-  "    XX X X XX   ",
-  "   XXXXXXXXXXX  ",
-  "  XXXXXXXXXXXXX ",
-  "  XXXXXXXXXXXXX ",
-  "   XXXXXXXXXXX  ",
-  "     XX    XX   ",
-  "     X      X   ",
-  "                ",
-];
-const sheepFrame1 = [
-  "                ",
-  "      XXXX      ",
-  "     XXXXXX     ",
-  "    XX X X XX   ",
-  "   XXXXXXXXXXX  ",
-  "  XXXXXXXXXXXXX ",
-  "  XXXXXXXXXXXXX ",
-  "   XXXXXXXXXXX  ",
-  "      X    X    ",
-  "      X    X    ",
-  "                ",
-];
-
-const sprites: Record<AnimalType, string[][]> = {
-  dog: [dogFrame0, dogFrame1],
-  cat: [catFrame0, catFrame1],
-  sheep: [sheepFrame0, sheepFrame1],
+const emojiMap: Record<AnimalType, string> = {
+  dog: "🐕",
+  cat: "🐈",
+  sheep: "🐑",
 };
 
 export function generateAnimalCanvas(
@@ -106,24 +22,30 @@ export function generateAnimalCanvas(
   ctx.fillStyle = "black";
   ctx.fillRect(0, 0, ANIMAL_WIDTH, ANIMAL_HEIGHT);
 
-  ctx.fillStyle = "white";
+  ctx.save();
 
+  // キャンバスの「中心」を基準にするため、座標を中央に移動
+  ctx.translate(ANIMAL_WIDTH / 2, ANIMAL_HEIGHT / 2);
+
+  // 右に進むときは反転
   if (direction === 1) {
-    ctx.translate(ANIMAL_WIDTH, 0);
     ctx.scale(-1, 1);
   }
 
-  const pixels = sprites[type][frame];
-  const dotSize = 4;
-  const yOffset = 15;
+  // ★ 足を動かせない代わりの「ヨチヨチ歩き（回転）」アニメーション
+  // フレーム0と1で、体を前後に10度ずつ傾ける
+  const angleDegree = frame === 0 ? 10 : -10;
+  ctx.rotate((angleDegree * Math.PI) / 180);
 
-  for (let y = 0; y < pixels.length; y++) {
-    for (let x = 0; x < pixels[y].length; x++) {
-      if (pixels[y][x] === "X") {
-        ctx.fillRect(x * dotSize, yOffset + y * dotSize, dotSize, dotSize);
-      }
-    }
-  }
+  ctx.font = "45px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  // すでに中心に移動しているので (0, 0) を基準に描画
+  // (少し下にズレる絵文字のベースラインを補正するためにYに+5しています)
+  ctx.fillText(emojiMap[type], 0, 5);
+
+  ctx.restore();
 
   return canvas;
 }
