@@ -5,11 +5,15 @@ import {
   OsEventTypeList,
   RebuildPageContainer,
   TextContainerProperty,
-  TextContainerUpgrade,
   waitForEvenAppBridge,
 } from "@evenrealities/even_hub_sdk";
 
-import { DOG_HEIGHT, DOG_WIDTH, generateDogCanvas } from "./dog";
+import {
+  ANIMAL_HEIGHT,
+  ANIMAL_WIDTH,
+  AnimalType,
+  generateAnimalCanvas,
+} from "./animals";
 
 // --- 状態管理 ---
 let isVisible = true;
@@ -18,31 +22,21 @@ let mainTimerId: number | null = null;
 let weatherTimerId: number | null = null;
 let currentWeatherText = "気温: 取得中...";
 
-// コンテナ自体のサイズと配置
-const CONTAINER_WIDTH = 288;
-const CONTAINER_X = 144; // 画面の中央付近に配置 (576 - 288) / 2 = 144
-const dogY = 220;
+// スマホ側で選択されている動物の状態
+let currentAnimal: AnimalType = "dog";
 
-// 犬の相対座標（288pxのCanvas内での位置）
-let dogX = 0;
-let dogDirection = 1;
-let dogFrame = 0;
+const animalY = 220;
+let animalX = 0;
+let animalDirection = 1;
+let animalFrame = 0;
 
 let bridgeInstance: any = null;
+let isUpdating = false;
 
 function toFullwidth(str: string): string {
   return str.replace(/[0-9]/g, (ch) =>
     String.fromCharCode(ch.charCodeAt(0) + 0xfee0),
   );
-}
-
-async function canvasToPng(canvas: HTMLCanvasElement): Promise<number[]> {
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/png"),
-  );
-  if (!blob) throw new Error("Failed to create blob from canvas");
-  const arrayBuffer = await blob.arrayBuffer();
-  return Array.from(new Uint8Array(arrayBuffer));
 }
 
 async function fetchWeather() {
@@ -74,36 +68,76 @@ function getDisplayString(): string {
   return `${toFullwidth(`${dateStr}\n${timeStr}`)}\n${currentWeatherText}`;
 }
 
+// 📱 【新規追加】スマホ側の画面（WebView）にUIを描画する関数
+function setupSmartphoneUI() {
+  const appDiv = document.getElementById("app");
+  if (!appDiv) return;
+
+  // ボタンを含むHTMLを画面に注入
+  appDiv.innerHTML = `
+    <div style="background: #222; padding: 20px; border-radius: 12px; margin-top: 20px;">
+      <h2 style="color: #4CAF50; margin-bottom: 20px;">ペットを選択</h2>
+      <div style="display: flex; gap: 10px; justify-content: center;">
+        <button id="btn-dog" style="padding: 12px 24px; font-size: 18px; border-radius: 8px; border: none; cursor: pointer; background: #eee;">🐕 犬</button>
+        <button id="btn-cat" style="padding: 12px 24px; font-size: 18px; border-radius: 8px; border: none; cursor: pointer; background: #eee;">🐈 猫</button>
+        <button id="btn-sheep" style="padding: 12px 24px; font-size: 18px; border-radius: 8px; border: none; cursor: pointer; background: #eee;">🐑 羊</button>
+      </div>
+    </div>
+  `;
+
+  // 各ボタンをクリックした時の処理（状態を書き換える）
+  document.getElementById("btn-dog")?.addEventListener("click", () => {
+    currentAnimal = "dog";
+  });
+  document.getElementById("btn-cat")?.addEventListener("click", () => {
+    currentAnimal = "cat";
+  });
+  document.getElementById("btn-sheep")?.addEventListener("click", () => {
+    currentAnimal = "sheep";
+  });
+}
+
 async function tick() {
-  if (!bridgeInstance) return;
+  if (!bridgeInstance || isUpdating) return;
+  isUpdating = true;
 
-  if (!isVisible) {
-    if (lastVisibleState !== isVisible) {
-      await bridgeInstance.rebuildPageContainer(
-        new RebuildPageContainer({
-          containerTotalNum: 1,
-          textObject: [
-            new TextContainerProperty({
-              containerID: 1,
-              containerName: "dashboard",
-              content: " ",
-              xPosition: 0,
-              yPosition: 0,
-              width: 576,
-              height: 288,
-              isEventCapture: 1,
-              paddingLength: 0,
-            }),
-          ],
-        }),
-      );
-      lastVisibleState = isVisible;
+  try {
+    if (!isVisible) {
+      if (lastVisibleState !== isVisible) {
+        await bridgeInstance.rebuildPageContainer(
+          new RebuildPageContainer({
+            containerTotalNum: 1,
+            textObject: [
+              new TextContainerProperty({
+                containerID: 1,
+                containerName: "dashboard",
+                content: " ",
+                xPosition: 0,
+                yPosition: 0,
+                width: 576,
+                height: 288,
+                isEventCapture: 1,
+                paddingLength: 0,
+              }),
+            ],
+          }),
+        );
+        lastVisibleState = isVisible;
+      }
+      return;
     }
-    return;
-  }
 
-  // 表示オフからオンへの復帰時のみレイアウト再構築
-  if (lastVisibleState !== isVisible) {
+    animalX += animalDirection * 15;
+    if (animalX > 576 - ANIMAL_WIDTH) {
+      animalX = 576 - ANIMAL_WIDTH;
+      animalDirection = -1;
+    } else if (animalX < 0) {
+      animalX = 0;
+      animalDirection = 1;
+    }
+    animalFrame = animalFrame === 0 ? 1 : 0;
+    lastVisibleState = isVisible;
+
     await bridgeInstance.rebuildPageContainer(
       new RebuildPageContainer({
         containerTotalNum: 2,
@@ -123,68 +157,43 @@ async function tick() {
         imageObject: [
           new ImageContainerProperty({
             containerID: 2,
-            containerName: "dog_img",
-            xPosition: CONTAINER_X,
-            yPosition: dogY,
-            width: CONTAINER_WIDTH,
-            height: DOG_HEIGHT,
+            containerName: "animal_img",
+            xPosition: animalX,
+            yPosition: animalY,
+            width: ANIMAL_WIDTH,
+            height: ANIMAL_HEIGHT,
           }),
         ],
       }),
     );
-    lastVisibleState = isVisible;
+
+    // ★ 選択されている動物(currentAnimal)の画像を生成する
+    const canvas = generateAnimalCanvas(
+      currentAnimal,
+      animalFrame,
+      animalDirection,
+    );
+    const base64Data = canvas.toDataURL("image/png").split(",")[1];
+
+    await bridgeInstance.updateImageRawData(
+      new ImageRawDataUpdate({
+        containerID: 2,
+        containerName: "animal_img",
+        imageData: base64Data as any,
+      }),
+    );
+  } finally {
+    isUpdating = false;
   }
-
-  // 1. 犬の座標更新（288pxの枠内で動かす）
-  dogX += dogDirection * 15;
-  if (dogX > CONTAINER_WIDTH - DOG_WIDTH) {
-    dogX = CONTAINER_WIDTH - DOG_WIDTH;
-    dogDirection = -1;
-  } else if (dogX < 0) {
-    dogX = 0;
-    dogDirection = 1;
-  }
-  dogFrame = dogFrame === 0 ? 1 : 0;
-
-  // 2. 時計の更新（rebuildPageContainerを使わず、テキストのみ部分更新）
-  await bridgeInstance.textContainerUpgrade(
-    new TextContainerUpgrade({
-      containerID: 1,
-      containerName: "dashboard",
-      content: getDisplayString(),
-    }),
-  );
-
-  // 3. 幅288pxの「親キャンバス」を作り、そこに犬をズラして描き込む
-  const frameCanvas = document.createElement("canvas");
-  frameCanvas.width = CONTAINER_WIDTH;
-  frameCanvas.height = DOG_HEIGHT;
-  const ctx = frameCanvas.getContext("2d")!;
-
-  // 背景は透過（黒）
-  ctx.fillStyle = "black";
-  ctx.fillRect(0, 0, CONTAINER_WIDTH, DOG_HEIGHT);
-
-  // 先ほど作った犬のドット絵を、X座標をずらしてスタンプのように押す
-  const dogImage = generateDogCanvas(dogFrame, dogDirection);
-  ctx.drawImage(dogImage, dogX, 0);
-
-  // 4. 画像データの送信
-  const frameBytes = await canvasToPng(frameCanvas);
-  await bridgeInstance.updateImageRawData(
-    new ImageRawDataUpdate({
-      containerID: 2,
-      containerName: "dog_img",
-      imageData: frameBytes,
-    }),
-  );
 }
 
 async function initApp() {
+  // 📱 グラス側の初期化の前にスマホ側のUIを表示
+  setupSmartphoneUI();
+
   bridgeInstance = await waitForEvenAppBridge();
   await fetchWeather();
 
-  // 初回構築時は枠（コンテナ）を288pxで作る
   await bridgeInstance.createStartUpPageContainer(
     new CreateStartUpPageContainer({
       containerTotalNum: 2,
@@ -204,11 +213,11 @@ async function initApp() {
       imageObject: [
         new ImageContainerProperty({
           containerID: 2,
-          containerName: "dog_img",
-          xPosition: CONTAINER_X,
-          yPosition: dogY,
-          width: CONTAINER_WIDTH,
-          height: DOG_HEIGHT,
+          containerName: "animal_img",
+          xPosition: animalX,
+          yPosition: animalY,
+          width: ANIMAL_WIDTH,
+          height: ANIMAL_HEIGHT,
         }),
       ],
     }),
@@ -223,14 +232,11 @@ async function initApp() {
       event.textEvent?.eventType ??
       event.sysEvent?.eventType ??
       event.jsonData?.eventType;
-
     const isClick =
       eventType === OsEventTypeList.CLICK_EVENT || eventType === undefined;
     const isDoubleClick = eventType === OsEventTypeList.DOUBLE_CLICK_EVENT;
 
-    if (isClick) {
-      isVisible = !isVisible;
-    }
+    if (isClick) isVisible = !isVisible;
 
     if (isDoubleClick) {
       if (mainTimerId !== null) clearInterval(mainTimerId);
