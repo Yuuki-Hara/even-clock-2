@@ -1,0 +1,12 @@
+{
+  "package_id": "com.example.clock",
+  "edition": "202601",
+  "name": "Clock App",
+  "version": "1.0.0",
+  "min_app_version": "0.1.0",
+  "tagline": "Simple clock app",
+  "description": "A simple clock for Even G2",
+  "author": "Your Name",
+  "entrypoint": "index.html",
+  "permissions": {}
+}
